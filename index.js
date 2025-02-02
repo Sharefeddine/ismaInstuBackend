@@ -1,4 +1,6 @@
 const express = require('express');
+const { FieldValue } = require('firebase-admin/firestore');
+
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const db = require('./config'); // Ensure this is importing the Firestore instance
@@ -57,6 +59,20 @@ app.post("/addTeacher", async (req, res) => {
         res.status(500).send({ message: "Error", error: error.message });
     }
 });
+app.get("/getBooks", async (req, res) => {
+    try {
+        const booksCollection = collection(db, 'books');
+        const bookSnapshot = await getDocs(booksCollection);
+        const booksList = bookSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+        res.send({ message: "success", books: booksList });
+    } catch (error) {
+        console.error("Error retrieving documents: ", error);
+        res.status(500).send({ message: "Error", error: error.message });
+    }
+});
 
 app.post("/addOutCome", async (req, res) => {
     const data = req.body;
@@ -64,7 +80,7 @@ app.post("/addOutCome", async (req, res) => {
     try {
         const outComesCollection = collection(db, 'outCome');
         const docRef = await addDoc(outComesCollection, data);
-        res.send({ message: "success", id: docRef.id });
+        res.send([{ message: "success", id: docRef.id }]);
     } catch (error) {
         console.error("Error adding document: ", error);
         res.status(500).send({ message: "Error", error: error.message });
@@ -77,7 +93,7 @@ app.post("/addIncome", async (req, res) => {
     try {
         const incomesCollection = collection(db, 'inCome');
         const docRef = await addDoc(incomesCollection, data);
-        res.send({ message: "success", id: docRef.id });
+        res.send([{ message: "success", id: docRef.id }]);
     } catch (error) {
         console.error("Error adding document: ", error);
         res.status(500).send({ message: "Error", error: error.message });
@@ -280,6 +296,152 @@ app.get("/getStudent", async (req, res) => {
         res.status(500).send({ message: "Error", error: error.message });
     }
 });
+app.get("/getTeacher", async (req, res) => {
+    try {
+        const { teacherID } = req.query;
+        console.log(teacherID);
+        
+        if (!teacherID) {
+            return res.status(400).send({ message: "TeacherID is required" });
+        }
+
+        // Create a reference to the teachers collection
+        const teachersRef = collection(db, 'teachers');
+        
+        // Create a query against the collection
+        const q = query(teachersRef, where('id', '==', teacherID));
+        console.log(q);
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+            return res.status(404).send({ message: "Teacher not found" });
+        }
+
+        // Get the first matching document
+        const docSnapshot = querySnapshot.docs[0];
+        const teacherData = docSnapshot.data();
+        teacherData.id = docSnapshot.id;
+
+        res.send({ message: "success", teacher: teacherData });
+    } catch (error) {
+        console.error("Error retrieving teacher: ", error);
+        res.status(500).send({ message: "Error", error: error.message });
+    }
+});
+app.get("/getTeacherGroupes", async (req, res) => {
+    try {
+        const { teacherID } = req.query;
+        console.log(teacherID);
+        
+        if (!teacherID) {
+            return res.status(400).send({ message: "TeacherID is required" });
+        }
+
+        // Create a reference to the groupes collection
+        const groupesRef = collection(db, 'groupes');
+        
+        // Create a query against the collection to find groups by teacherID
+        const q = query(groupesRef, where('teacherID', '==', teacherID));
+        console.log(q);
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+            return res.status(404).send({ message: "No groups found for this teacher" });
+        }
+
+        // Collect all matching documents
+        const groupes = querySnapshot.docs.map(doc => {
+            const groupeData = doc.data();
+            groupeData.id = doc.id; // Add the document ID to the data
+            return groupeData;
+        });
+
+        res.send({ message: "success", groupes });
+    } catch (error) {
+        console.error("Error retrieving groupes: ", error);
+        res.status(500).send({ message: "Error", error: error.message });
+    }
+});
+app.get("/getGroup", async (req, res) => {
+    try {
+        const { groupID } = req.query;
+        console.log(groupID);
+        
+        if (!groupID) {
+            return res.status(400).send({ message: "GroupID is required" });
+        }
+
+        // Create a reference to the groups collection
+        const groupsRef = collection(db, 'groupes');
+        
+        // Create a query against the collection
+        const q = query(groupsRef, where('id', '==', groupID));
+        console.log(q);
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+            return res.status(404).send({ message: "Group not found" });
+        }
+
+        // Get the first matching document
+        const docSnapshot = querySnapshot.docs[0];
+        const groupData = docSnapshot.data();
+        groupData.id = docSnapshot.id;
+
+        res.send({ message: "success", group: groupData });
+    } catch (error) {
+        console.error("Error retrieving group: ", error);
+        res.status(500).send({ message: "Error", error: error.message });
+    }
+});
+app.get("/getStudentsInGroup", async (req, res) => {
+    try {
+        const { groupID } = req.query;
+        console.log(groupID);
+        
+        if (!groupID) {
+            return res.status(400).send({ message: "GroupID is required" });
+        }
+
+        // Create a reference to the studentInGroup collection
+        const studentInGroupRef = collection(db, 'studentInGroup');
+        
+        // Create a query to find students in the specified group
+        const q = query(studentInGroupRef, where('groupID', '==', groupID));
+        console.log(q);
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+            return res.status(404).send({ message: "No students found in this group" });
+        }
+
+        // Collect student IDs from the results
+        const studentIDs = querySnapshot.docs.map(doc => doc.data().studentID);
+
+        // Create a reference to the student collection
+        const studentRef = collection(db, 'student');
+        const studentPromises = studentIDs.map(studentID =>
+            getDocs(query(studentRef, where('id', '==', studentID)))
+        );
+
+        // Wait for all student queries to resolve
+        const studentSnapshots = await Promise.all(studentPromises);
+
+        // Collect student names
+        const students = studentSnapshots.map(snapshot => {
+            if (!snapshot.empty) {
+                const studentData = snapshot.docs[0].data();
+                return `${studentData.firstName} and ${studentData.lastName}`;
+            }
+            return null; // No matching student found
+        }).filter(name => name !== null); // Filter out null values
+
+        res.send({ message: "success", students });
+    } catch (error) {
+        console.error("Error retrieving students: ", error);
+        res.status(500).send({ message: "Error", error: error.message });
+    }
+});
 //get StudentGroup
 app.get("/getStudentGroups", async (req, res) => {
     try {
@@ -441,17 +603,39 @@ app.get("/getOutcomes", async (req, res) => {
 app.post("/addGroup", async (req, res) => {
     const data = req.body;
     console.log(data);
+    
     try {
         const groupsCollection = collection(db, 'groupes');
-        const docRef = await addDoc(groupsCollection, data);
+        
+        // Extract teacherID and groupCount from data
+        const { teacherID, groupCount, ...groupData } = data;
+
+        // Add the group data (excluding teacherID and groupCount) to the 'groupes' collection
+        const docRef = await addDoc(groupsCollection, groupData);
+        
+        // Query the 'teachers' collection to find the document where the 'id' field matches teacherID
+        const teachersCollection = collection(db, 'teachers');
+        const q = query(teachersCollection, where('id', '==', teacherID));
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+            throw new Error(`Teacher with ID ${teacherID} not found.`);
+        }
+
+        // Get the first document that matches the query (assuming 'id' is unique)
+        const teacherDocRef = querySnapshot.docs[0].ref;
+
+        // Update the teacher's document in the 'teachers' collection
+        await updateDoc(teacherDocRef, {
+            groupCount: groupCount  // Use FieldValue.increment to increment groupCount by 1
+        });
+
         res.send([{ message: "success", id: docRef.id }]);
     } catch (error) {
         console.error("Error adding document: ", error);
         res.status(500).send({ message: "Error", error: error.message });
     }
 });
-
-
 // Route to add a trip
 app.post("/addTrip", async (req, res) => {
     const data = req.body;
@@ -482,52 +666,55 @@ app.get("/getTrips", async (req, res) => {
     }
 });
 app.get("/getTrip", async (req, res) => {
-    const { tripId } = req.params;
-    console.log(`Fetching trip with ID: ${tripId}`);
-
+    const { tripID } = req.query; // Use req.query to access query parameters
+    console.log(`Fetching trips with ID: ${tripID}`);
+    
     try {
-        const tripRef = doc(db, 'trips', tripId);
-        const tripSnap = await getDoc(tripRef);
+        const tripsCollection = collection(db, 'trips');
+        const tripQuery = query(tripsCollection, where("tripID", "==", tripID));
+        const tripSnapshot = await getDocs(tripQuery);
 
-        if (!tripSnap.exists()) {
-            return res.status(404).send({ message: "Trip not found" });
+        if (tripSnapshot.empty) {
+            return res.status(404).send({ message: "No trips found with the specified tripID" });
         }
 
-        const tripData = {
-            id: tripSnap.id,
-            ...tripSnap.data()
-        };
+        const tripsData = tripSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
 
-        res.send({ message: "success", trip: tripData });
+        res.send({ message: "success", trips: tripsData });
     } catch (error) {
-        console.error("Error retrieving trip: ", error);
+        console.error("Error retrieving trips: ", error);
         res.status(500).send({ message: "Error", error: error.message });
     }
 });
 app.get("/getStudentsInTrip", async (req, res) => {
     const { tripID } = req.query; // Use req.query instead of req.params
-    console.log(`Fetching trip with ID: ${tripID}`);
+    console.log(`Fetching students for trip with ID: ${tripID}`);
 
     if (!tripID) {
         return res.status(400).send({ message: "Trip ID is required" });
     }
 
     try {
-        const tripRef = doc(db, 'studentsInTrip', tripID);
-        const tripSnap = await getDoc(tripRef);
+        // Query the collection for documents where tripID matches the provided tripID
+        const studentsRef = collection(db, 'studentsInTrip');
+        const q = query(studentsRef, where("tripID", "==", tripID));
+        const querySnapshot = await getDocs(q);
 
-        if (!tripSnap.exists()) {
-            return res.status(404).send({ message: "Trip not found" });
+        if (querySnapshot.empty) {
+            return res.status(404).send({ message: "No students found for this trip" });
         }
 
-        const tripData = {
-            id: tripSnap.id,
-            ...tripSnap.data()
-        };
+        const studentsData = querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
 
-        res.send({ message: "success", trip: tripData });
+        res.send({ message: "success", students: studentsData });
     } catch (error) {
-        console.error("Error retrieving trip: ", error);
+        console.error("Error retrieving students: ", error);
         res.status(500).send({ message: "Error", error: error.message });
     }
 });
@@ -577,7 +764,7 @@ app.post("/updateAllowances", async (req, res) => {
             allowancesTimesLeft: allowancesTimesLeft
         });
 
-        res.send({ message: "Update successful" });
+        res.send({ message: "success" });
     } catch (error) {
         console.error("Error updating document: ", error);
         res.status(500).send({ message: "Error", error: error.message });
@@ -619,7 +806,7 @@ app.post("/updateStudentDebt", async (req, res) => {
             debt: debt
         });
 
-        res.send({ message: "Debt updated successfully" });
+        res.send({ message: "success" });
     } catch (error) {
         console.error("Error updating document: ", error);
         res.status(500).send({ message: "Error", error: error.message });
@@ -650,9 +837,131 @@ app.post("/payDebt", async (req, res) => {
             allowancesTimesLeft:allowancesTimesLeft
         });
 
-        res.send({ message: "Debt updated successfully" });
+        res.send({ message: "success" });
     } catch (error) {
         console.error("Error updating document: ", error);
+        res.status(500).send({ message: "Error", error: error.message });
+    }
+});
+app.post("/addStudentToTrip", async (req, res) => {
+    const { enrollDate, studentName, tripID, totalStudents } = req.body;
+    console.log(req.body);
+    
+    try {
+        const studentsInTripCollection = collection(db, 'studentsInTrip');
+        const tripsCollection = collection(db, 'trips');
+
+        // Add the student to the studentsInTrip collection
+        await addDoc(studentsInTripCollection, { enrollDate, studentName, tripID });
+
+        // Query for the trip document using the tripID field
+        const tripQuery = query(tripsCollection, where("tripID", "==", tripID));
+        const tripSnapshot = await getDocs(tripQuery);
+
+        if (tripSnapshot.empty) {
+            return res.status(404).send({ message: "Trip not found", tripID });
+        }
+
+        // Assuming there's only one document with the matching tripID
+        const tripDocRef = doc(db, 'trips', tripSnapshot.docs[0].id);
+
+        // Update the totalStudents in the trips collection with the new total
+        await updateDoc(tripDocRef, {
+            totalStudents: totalStudents 
+        });
+        
+        res.send([{ message: "success", tripID }]);
+    } catch (error) {
+        console.error("Error adding student to trip: ", error);
+        res.status(500).send({ message: "Error", error: error.message });
+    }
+});
+app.post("/addStudentToGroup", async (req, res) => {
+    const data = req.body;
+    console.log(req.body);
+
+    try {
+        const studentsInGroupCollection = collection(db, 'studentsInGroup');
+        // Destructure necessary fields from the incoming data
+        const { studentID, groupID} = data;
+        // Add the student to the studentsInGroup collection
+        await addDoc(studentsInGroupCollection, {studentID, groupID });
+        res.send([{ message: "success", id: docRef.id }]);
+    } catch (error) {
+        console.error("Error adding student to group: ", error);
+        res.status(500).send({ message: "Error", error: error.message });
+    }
+});
+app.get("/getBook", async (req, res) => {
+    try {
+        const { bookID } = req.query;
+        console.log(bookID);
+        
+        if (!bookID) {
+            return res.status(400).send({ message: "BookID is required" });
+        }
+
+        // Create a reference to the books collection
+        const booksRef = collection(db, 'books');
+        
+        // Create a query against the collection
+        const q = query(booksRef, where('id', '==', bookID));
+        console.log(q);
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+            return res.status(404).send({ message: "Book not found" });
+        }
+
+        // Get the first matching document
+        const docSnapshot = querySnapshot.docs[0];
+        const bookData = docSnapshot.data();
+        bookData.id = docSnapshot.id;
+
+        res.send({ message: "success", book: bookData });
+    } catch (error) {
+        console.error("Error retrieving book: ", error);
+        res.status(500).send({ message: "Error", error: error.message });
+    }
+});
+app.get("/getStudentsWithBook", async (req, res) => {
+    try {
+        const { bookID } = req.query;
+
+        if (!bookID) {
+            return res.status(400).send({ message: "BookID is required" });
+        }
+
+        // Reference to the studentsHasBooks collection
+        const studentsHasBooksRef = collection(db, 'studentsHasBooks');
+
+        // Query to find studentIDs with the specified bookID
+        const q = query(studentsHasBooksRef, where('bookID', '==', bookID));
+        const studentHasBooksSnapshot = await getDocs(q);
+
+        if (studentHasBooksSnapshot.empty) {
+            return res.status(404).send({ message: "No students found for this book" });
+        }
+
+        // Collect student IDs
+        const studentIDs = studentHasBooksSnapshot.docs.map(doc => doc.data().studentID);
+
+        // Reference to the students collection
+        const studentsRef = collection(db, 'students');
+        const studentsList = [];
+
+        // Retrieve student details for each studentID
+        for (const studentID of studentIDs) {
+            const studentDoc = await getDoc(doc(studentsRef, studentID));
+            if (studentDoc.exists()) {
+                const studentData = studentDoc.data();
+                studentsList.push(`${studentData.firstName} ${studentData.lastName}`);
+            }
+        }
+
+        res.send({ message: "success", students: studentsList });
+    } catch (error) {
+        console.error("Error retrieving students: ", error);
         res.status(500).send({ message: "Error", error: error.message });
     }
 });
